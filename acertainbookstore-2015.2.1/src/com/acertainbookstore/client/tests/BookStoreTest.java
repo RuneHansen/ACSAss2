@@ -2,6 +2,7 @@ package com.acertainbookstore.client.tests;
 
 import static org.junit.Assert.*;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -32,9 +33,12 @@ public class BookStoreTest {
 
 	private static final int TEST_ISBN = 3044560;
 	private static final int NUM_COPIES = 5;
-	private static boolean localTest = false;
+	private static final int newNumBooksA = 10;
+	private static final int newNumBooksB = 13;
+	private static boolean localTest = true;
 	private static StockManager storeManager;
 	private static BookStore client;
+	private static boolean hasFailed = false; // used for test 2
 
 	@BeforeClass
 	public static void setUpBeforeClass() {
@@ -84,7 +88,7 @@ public class BookStoreTest {
 	
 	public StockBook getDefaultBook3(int i) {
 		return new ImmutableStockBook(TEST_ISBN + 2, "Introduction to Eduroam, vol 0",
-				"Hilterik Smoerhaar", (float) 10, i, 0, 0, 0, false);
+				"Hilterik Smørhår", (float) 10, i, 0, 0, 0, false);
 	}
 	
 	/**
@@ -148,20 +152,14 @@ public class BookStoreTest {
 			bookToBuy.add(new BookCopy(TEST_ISBN, 2));
 			bookToBuy.add(new BookCopy(TEST_ISBN + 1, 1));
 			bookToBuy.add(new BookCopy(TEST_ISBN + 2, 3));
-			
-			try {
-				System.out.println(storeManager.getBooks());
-			} catch (BookStoreException e2) {
-				;
-			}
-			
-			for(int i = 0; i < 1; i++) {
+
+			for(int i = 0; i < 100000; i++) {
 				if(job) {
 					try {
 						client.buyBooks(bookToBuy);
 					} catch (BookStoreException e) {
 						try {
-							Thread.sleep(100);
+							Thread.sleep(2);
 						} catch (InterruptedException e1) {
 							;
 						}
@@ -184,28 +182,227 @@ public class BookStoreTest {
 
 		
 		HashSet<StockBook> bookToAdd = new HashSet<StockBook>();
-		bookToAdd.add(getDefaultBook2(10));
-		bookToAdd.add(getDefaultBook3(10));
+		bookToAdd.add(getDefaultBook2(newNumBooksA));
+		bookToAdd.add(getDefaultBook3(newNumBooksB));
 		try {
 			storeManager.addBooks(bookToAdd);
 		} catch (BookStoreException e) {
 			fail();
 		}
+
 		Thread preben = new Thread(new ClientRunnable(true));
 		Thread sigurd = new Thread(new ClientRunnable(false));
 
 		sigurd.start();
-		//preben.start();
-		
-		//while(sigurd.isAlive() || preben.isAlive()){ ;}
-		
+		preben.start();
+
+		try{
+			sigurd.join();
+			preben.join();
+		}catch (Exception e){
+			fail();
+		}
+
 		List<StockBook> booksInStorePostTest = storeManager.getBooks();
 		// Check pre and post state are same
 		bookToAdd.add(getDefaultBook());
 		assertTrue(bookToAdd.containsAll(booksInStorePostTest));
 		assertTrue(bookToAdd.size() == booksInStorePostTest.size());
+		for(StockBook sb : storeManager.getBooks()) {
+			assertTrue(sb.getNumCopies() == NUM_COPIES && sb.getISBN() == TEST_ISBN
+					  || sb.getNumCopies() == newNumBooksA && sb.getISBN() == TEST_ISBN+1
+					  || sb.getNumCopies() == newNumBooksB && sb.getISBN() == TEST_ISBN+2
+					  );
+		}
 	}
+	
+	private class ClientRunnable2 implements Runnable {
+		private boolean job;
+		private int loopSize;
+		
+		ClientRunnable2(boolean i, int n) {
+			this.job = i;
+			loopSize = n;
+		}
+		
+		public void run() {
+			
+			HashSet<BookCopy> bookToBuy = new HashSet<BookCopy>();
+			bookToBuy.add(new BookCopy(TEST_ISBN, 2));
+			bookToBuy.add(new BookCopy(TEST_ISBN + 1, 1));
+			bookToBuy.add(new BookCopy(TEST_ISBN + 2, 3));
 
+			for(int i = 0; i < loopSize; i++) {
+				if(job) {
+					try {
+						client.buyBooks(bookToBuy);
+						storeManager.addCopies(bookToBuy);
+					} catch (BookStoreException e) {
+						return;
+					}
+				} else {
+					try {
+						for(StockBook sb : storeManager.getBooks()) {
+							if(sb.getNumCopies() == NUM_COPIES && sb.getISBN() == TEST_ISBN
+									  || sb.getNumCopies() == NUM_COPIES - 2 && sb.getISBN() == TEST_ISBN
+									  || sb.getNumCopies() == newNumBooksA && sb.getISBN() == TEST_ISBN+1
+									  || sb.getNumCopies() == newNumBooksA - 1 && sb.getISBN() == TEST_ISBN+1
+									  || sb.getNumCopies() == newNumBooksB && sb.getISBN() == TEST_ISBN+2
+									  || sb.getNumCopies() == newNumBooksB  -3 && sb.getISBN() == TEST_ISBN+2
+									  ){
+
+							}else{
+								hasFailed = true;
+								return;
+							}
+						}
+					} catch (BookStoreException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
+			}
+		}
+	}
+	
+	@Test
+	public void testConcurrentBuyStock2() throws BookStoreException {
+
+		hasFailed = false;
+		HashSet<StockBook> bookToAdd = new HashSet<StockBook>();
+		int newNumBooksA = 10;
+		int newNumBooksB = 13;
+		bookToAdd.add(getDefaultBook2(newNumBooksA));
+		bookToAdd.add(getDefaultBook3(newNumBooksB));
+		try {
+			storeManager.addBooks(bookToAdd);
+		} catch (BookStoreException e) {
+			fail();
+		}
+		
+		Thread preben = new Thread(new ClientRunnable2(true, 500000));
+		Thread sigurd = new Thread(new ClientRunnable2(false, 400000));
+
+		sigurd.start();
+		preben.start();
+		
+		try{
+			sigurd.join();
+			preben.join();
+		}catch (Exception e){
+			fail();
+		}
+
+		List<StockBook> booksInStorePostTest = storeManager.getBooks();
+		// Check pre and post state are same
+		bookToAdd.add(getDefaultBook());
+		assertTrue(bookToAdd.containsAll(booksInStorePostTest));
+		assertTrue(bookToAdd.size() == booksInStorePostTest.size());
+		assertTrue(!hasFailed);
+	}
+	@Test
+	public void testConcurrentBuyStock3() throws BookStoreException {
+
+		HashSet<StockBook> bookToAdd = new HashSet<StockBook>();
+		int newNumBooksA = 10;
+		int newNumBooksB = 13;
+		bookToAdd.add(getDefaultBook2(newNumBooksA));
+		bookToAdd.add(getDefaultBook3(newNumBooksB));
+		try {
+			storeManager.addBooks(bookToAdd);
+		} catch (BookStoreException e) {
+			fail();
+		}
+		List<Thread> threads = new ArrayList<Thread>();
+		for(int i = 0; i<100; i++){
+			threads.add(new Thread(new ClientRunnable(true)));	
+			threads.add(new Thread(new ClientRunnable(false)));
+		}
+
+		for(Thread t : threads){
+			t.start();
+		}
+		
+		try{
+			for(Thread t : threads)
+				t.join();
+		}catch (Exception e){
+			fail();
+		}
+
+		List<StockBook> booksInStorePostTest = storeManager.getBooks();
+		// Check pre and post state are same
+		bookToAdd.add(getDefaultBook());
+		assertTrue(bookToAdd.containsAll(booksInStorePostTest));
+		assertTrue(bookToAdd.size() == booksInStorePostTest.size());
+		for(StockBook sb : storeManager.getBooks()) {
+			assertTrue(sb.getNumCopies() == NUM_COPIES && sb.getISBN() == TEST_ISBN
+					  || sb.getNumCopies() == newNumBooksA && sb.getISBN() == TEST_ISBN+1
+					  || sb.getNumCopies() == newNumBooksB && sb.getISBN() == TEST_ISBN+2
+					  );
+		}
+	}
+	
+	private class ClientRunnable4 implements Runnable {
+		
+		ClientRunnable4() {
+		}
+		
+		public void run() {
+
+			for(int i = 0; i < 100000; i++) {
+				try {
+					storeManager.getBooks();
+					client.getEditorPicks(1);
+				} catch (BookStoreException e) {
+					hasFailed = true;
+				}
+			}
+		}
+	}
+	@Test
+	public void testConcurrentBuyStock4() throws BookStoreException {
+
+		hasFailed = false;
+		HashSet<StockBook> bookToAdd = new HashSet<StockBook>();
+		int newNumBooksA = 10;
+		int newNumBooksB = 13;
+		bookToAdd.add(getDefaultBook2(newNumBooksA));
+		bookToAdd.add(getDefaultBook3(newNumBooksB));
+		try {
+			storeManager.addBooks(bookToAdd);
+		} catch (BookStoreException e) {
+			fail();
+		}
+		List<Thread> threads = new ArrayList<Thread>();
+		for(int i = 0; i<100; i++){
+			threads.add(new Thread(new ClientRunnable4()));
+		}
+
+		for(Thread t : threads){
+			t.start();
+		}
+		
+		try{
+			for(Thread t : threads)
+				t.join();
+		}catch (Exception e){
+			fail();
+		}
+
+		List<StockBook> booksInStorePostTest = storeManager.getBooks();
+		// Check pre and post state are same
+		bookToAdd.add(getDefaultBook());
+		assertTrue(bookToAdd.containsAll(booksInStorePostTest));
+		assertTrue(bookToAdd.size() == booksInStorePostTest.size());
+		for(StockBook sb : storeManager.getBooks()) {
+			assertTrue(sb.getNumCopies() == NUM_COPIES && sb.getISBN() == TEST_ISBN
+					  || sb.getNumCopies() == newNumBooksA && sb.getISBN() == TEST_ISBN+1
+					  || sb.getNumCopies() == newNumBooksB && sb.getISBN() == TEST_ISBN+2
+					  );
+		}
+		assertTrue(!hasFailed);
+	}
 	/**
 	 * Tests that books with invalid ISBNs cannot be bought
 	 */

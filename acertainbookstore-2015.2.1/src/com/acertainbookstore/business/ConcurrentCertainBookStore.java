@@ -41,13 +41,16 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 
 	public void addBooks(Set<StockBook> bookSet)
 			throws BookStoreException {
-		
+
+		Lock myML = masterLock.writeLock();
+		myML.lock();
+		List<Lock> locks = new ArrayList<Lock>();
+
 		if (bookSet == null) {
+			myML.unlock();
 			throw new BookStoreException(BookStoreConstants.NULL_INPUT);
 		}
-		Lock myML = masterLock.writeLock();
-		List<Lock> locks = new ArrayList<Lock>();
-		
+
 		// Check if all are there
 		for (StockBook book : bookSet) {
 			int ISBN = book.getISBN();
@@ -55,8 +58,7 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 			String bookAuthor = book.getAuthor();
 			int noCopies = book.getNumCopies();
 			float bookPrice = book.getPrice();
-			
-			
+
 			if (BookStoreUtility.isInvalidISBN(ISBN)
 					|| BookStoreUtility.isEmpty(bookTitle)
 					|| BookStoreUtility.isEmpty(bookAuthor)
@@ -78,7 +80,9 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 			int ISBN = book.getISBN();
 			lockMap.put(ISBN, new ReentrantReadWriteLock());
 			ReadWriteLock newLock = lockMap.get(ISBN);
-			locks.add(newLock.writeLock());
+			Lock l = newLock.writeLock();
+			l.lock();
+			locks.add(l);
 			
 			bookMap.put(ISBN, new BookStoreBook(book));
 		}
@@ -94,6 +98,7 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 	public void addCopies(Set<BookCopy> bookCopiesSet)
 			throws BookStoreException {
 		Lock myML = masterLock.readLock();
+		myML.lock();
 		int ISBN, numCopies;
 		List<Lock> locks = new ArrayList<Lock>();
 
@@ -126,7 +131,9 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 		for (BookCopy bookCopy : bookCopiesSet) {
 			ISBN = bookCopy.getISBN();
 			ReadWriteLock newLock = lockMap.get(ISBN);
-			locks.add(newLock.writeLock());
+			Lock l = newLock.writeLock();
+			l.lock();
+			locks.add(l);
 			numCopies = bookCopy.getNumCopies();
 			book = bookMap.get(ISBN);
 			book.addCopies(numCopies);
@@ -140,10 +147,13 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 
 	public List<StockBook> getBooks() {
 		Lock myML = masterLock.readLock();
+		myML.lock();
 		Collection<ReadWriteLock> myLocks = lockMap.values();
 		List<Lock> locks = new ArrayList<Lock>();
 		for(ReadWriteLock lock : myLocks) {
-			locks.add(lock.readLock());
+			Lock l =lock.readLock();
+			l.lock();
+			locks.add(l);
 		}
 		
 		List<StockBook> listBooks = new ArrayList<StockBook>();
@@ -168,6 +178,7 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 			throw new BookStoreException(BookStoreConstants.NULL_INPUT);
 		}
 		Lock myML = masterLock.readLock();
+		myML.lock();
 		int ISBNVal;
 		List<Lock> locks = new ArrayList<Lock>();
 
@@ -190,7 +201,9 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 
 		for (BookEditorPick editorPickArg : editorPicks) {
 			ReadWriteLock newLock = lockMap.get(editorPickArg.getISBN());
-			locks.add(newLock.writeLock());
+			Lock l = newLock.writeLock();
+			l.lock();
+			locks.add(l);
 			
 			bookMap.get(editorPickArg.getISBN()).setEditorPick(
 					editorPickArg.isEditorPick());
@@ -210,6 +223,7 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 			throw new BookStoreException(BookStoreConstants.NULL_INPUT);
 		}
 		Lock myML = masterLock.readLock();
+		myML.lock(); //good lock
 		// Check that all ISBNs that we buy are there first.
 		int ISBN;
 		List<Lock> locks = new ArrayList<Lock>();
@@ -243,7 +257,9 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 				throw new BookStoreException(BookStoreConstants.ISBN + ISBN
 						+ BookStoreConstants.NOT_AVAILABLE);}
 			
-			locks.add(lockMap.get(ISBN).writeLock());
+			Lock l = lockMap.get(ISBN).writeLock();
+			l.lock();
+			locks.add(l);
 			
 			book = bookMap.get(ISBN);
 			if (!book.areCopiesInStore(bookCopyToBuy.getNumCopies())) {
@@ -283,6 +299,7 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 			throw new BookStoreException(BookStoreConstants.NULL_INPUT);
 		}
 		Lock myML = masterLock.readLock();
+		myML.lock();
 
 		List<Lock> locks = new ArrayList<Lock>();
 
@@ -302,7 +319,9 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 		List<StockBook> listBooks = new ArrayList<StockBook>();
 
 		for (Integer ISBN : isbnSet) {
-			locks.add(lockMap.get(ISBN).readLock());
+			Lock l = lockMap.get(ISBN).readLock();
+			l.lock();
+			locks.add(l);
 			listBooks.add(bookMap.get(ISBN).immutableStockBook());
 		}
 		
@@ -320,6 +339,7 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 			throw new BookStoreException(BookStoreConstants.NULL_INPUT);
 		}
 		Lock myML = masterLock.readLock();
+		myML.lock();
 
 		List<Lock> locks = new ArrayList<Lock>();
 
@@ -342,7 +362,9 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 
 		// Get the books
 		for (Integer ISBN : isbnSet) {
-			locks.add(lockMap.get(ISBN).readLock());
+			Lock l = lockMap.get(ISBN).readLock();
+			l.lock();
+			locks.add(l);
 			listBooks.add(bookMap.get(ISBN).immutableBook());
 		}
 		
@@ -360,12 +382,15 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 					+ ", but it must be positive");
 		}
 		Lock myML = masterLock.readLock();
+		myML.lock();
 
 		List<Lock> locks = new ArrayList<Lock>();
 		Collection<ReadWriteLock> allLocks = lockMap.values();
 		
 		for(ReadWriteLock lock : allLocks) {
-			locks.add(lock.readLock());
+			Lock l = lock.readLock();
+			l.lock();
+			locks.add(l);
 		}
 
 
@@ -437,11 +462,14 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 
 	public void removeAllBooks() throws BookStoreException {
 		Lock myML = masterLock.writeLock();
+		myML.lock();
 
 		List<Lock> locks = new ArrayList<Lock>();
 		Collection<ReadWriteLock> allLocks = lockMap.values();
 		for(ReadWriteLock lock : allLocks) {
-			locks.add(lock.writeLock());
+			Lock l = lock.writeLock();
+			l.lock();
+			locks.add(l);
 		}
 		
 		bookMap.clear();
@@ -462,6 +490,7 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 			throw new BookStoreException(BookStoreConstants.NULL_INPUT);
 		}
 		Lock myML = masterLock.writeLock();
+		myML.lock();
 		List<Lock> locks = new ArrayList<Lock>();
 
 		
@@ -477,7 +506,9 @@ public class ConcurrentCertainBookStore implements BookStore, StockManager {
 		}
 
 		for (int isbn : isbnSet) {
-			locks.add(lockMap.get(isbn).writeLock());
+			Lock l = lockMap.get(isbn).writeLock();
+			l.lock();
+			locks.add(l);
 			bookMap.remove(isbn);
 			lockMap.remove(isbn);
 		}
